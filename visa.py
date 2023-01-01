@@ -3,7 +3,6 @@
 import time
 import json
 import random
-import platform
 import configparser
 from datetime import datetime
 
@@ -19,7 +18,7 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 
-config = configparser.ConfigParser()
+config = configparser.ConfigParser(interpolation=None)
 config.read('config.ini')
 
 USERNAME = config['USVISA']['USERNAME']
@@ -28,6 +27,8 @@ SCHEDULE_ID = config['USVISA']['SCHEDULE_ID']
 MY_SCHEDULE_DATE = config['USVISA']['MY_SCHEDULE_DATE']
 COUNTRY_CODE = config['USVISA']['COUNTRY_CODE'] 
 FACILITY_ID = config['USVISA']['FACILITY_ID']
+CASV_FACILITY_ID = config['USVISA']['CASV_FACILITY_ID']
+HAS_CASV = config['USVISA'].getboolean('HAS_CASV')
 
 SENDGRID_API_KEY = config['SENDGRID']['SENDGRID_API_KEY']
 PUSH_TOKEN = config['PUSHOVER']['PUSH_TOKEN']
@@ -49,6 +50,8 @@ COOLDOWN_TIME = 60*60  # wait time when temporary banned (empty list): 60 minute
 
 DATE_URL = f"https://ais.usvisa-info.com/{COUNTRY_CODE}/niv/schedule/{SCHEDULE_ID}/appointment/days/{FACILITY_ID}.json?appointments[expedite]=false"
 TIME_URL = f"https://ais.usvisa-info.com/{COUNTRY_CODE}/niv/schedule/{SCHEDULE_ID}/appointment/times/{FACILITY_ID}.json?date=%s&appointments[expedite]=false"
+CASV_DATE_URL = f"https://ais.usvisa-info.com/{COUNTRY_CODE}/niv/schedule/{SCHEDULE_ID}/appointment/days/{CASV_FACILITY_ID}.json?consulate_id={FACILITY_ID}"
+CASV_TIME_URL = f"https://ais.usvisa-info.com/{COUNTRY_CODE}/niv/schedule/{SCHEDULE_ID}/appointment/times/{CASV_FACILITY_ID}.json?consulate_id={FACILITY_ID}"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{COUNTRY_CODE}/niv/schedule/{SCHEDULE_ID}/appointment"
 EXIT = False
 
@@ -85,11 +88,13 @@ def get_driver():
     if LOCAL_USE:
         dr = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
     else:
-        dr = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--disable-gpu')
+        dr = webdriver.Remote(command_executor=HUB_ADDRESS, options=chrome_options)
     return dr
 
 driver = get_driver()
-
 
 def login():
     # Bypass reCAPTCHA
@@ -159,6 +164,25 @@ def get_time(date):
     print(f"Got time successfully! {date} {time}")
     return time
 
+def get_casv_date(date, time):
+    casv_date_url = CASV_DATE_URL + f"&consulate_date={date}&consulate_time={time}&appointments[expedite]=false"
+    driver.get(casv_date_url)
+    content = driver.find_element(By.TAG_NAME, 'pre').text
+    dates = json.loads(content)
+    position = -2 if dates[-1] == date else -1
+
+    return dates[position].get("date")
+
+def get_casv_time(date, time, casvDate):
+    casv_time_url = CASV_TIME_URL + f"&date={casvDate}&consulate_date={date}&consulate_time={time}&appointments[expedite]=false"
+    driver.get(casv_time_url)
+    content = driver.find_element(By.TAG_NAME, 'pre').text
+    data = json.loads(content)
+    time = data.get("available_times")[-1]
+
+    return time
+
+
 
 def reschedule(date):
     global EXIT
@@ -177,6 +201,16 @@ def reschedule(date):
         "appointments[consulate_appointment][time]": time,
     }
 
+    if(HAS_CASV):
+        print("will take casv date and time")
+        casvDate = get_casv_date(date, time)
+        print(f"Got casv date successfully! {casvDate}")
+        casvTime = get_casv_time(date, time, casvDate)
+        print(f"Got casv time successfully! {casvTime}")
+        data["appointments[asc_appointment][date]"] = casvDate
+        data["appointments[asc_appointment][time]"] = casvTime
+        data["appointments[asc_appointment][facility_id]"] = CASV_FACILITY_ID
+
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
         "Referer": APPOINTMENT_URL,
@@ -184,11 +218,12 @@ def reschedule(date):
     }
 
     r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
-    if(r.text.find('Successfully Scheduled') != -1):
+    if(r.text.find('Você agendou com êxito sua nomeação de visto') != -1):
         msg = f"Rescheduled Successfully! {date} {time}"
         send_notification(msg)
         EXIT = True
     else:
+        print(r.text)
         msg = f"Reschedule Failed. {date} {time}"
         send_notification(msg)
 
@@ -223,6 +258,7 @@ def get_available_date(dates):
     print("Checking for an earlier date:")
     for d in dates:
         date = d.get('date')
+        # also consider 1 week after from now
         if is_earlier(date) and date != last_seen:
             _, month, day = date.split('-')
             if(MY_CONDITION(month, day)):
@@ -238,6 +274,7 @@ def push_notification(dates):
 
 
 if __name__ == "__main__":
+    print("init visa.py")
     login()
     retry_count = 0
     while 1:
@@ -250,10 +287,6 @@ if __name__ == "__main__":
             print()
 
             dates = get_date()[:5]
-            if not dates:
-              msg = "List is empty"
-              send_notification(msg)
-              EXIT = True
             print_dates(dates)
             date = get_available_date(dates)
             print()
@@ -261,15 +294,15 @@ if __name__ == "__main__":
             if date:
                 reschedule(date)
                 push_notification(dates)
+                time.sleep(RETRY_TIME)
 
             if(EXIT):
                 print("------------------exit")
                 break
 
             if not dates:
-              msg = "List is empty"
+              msg = "usvisa-info banned request for your user"
               send_notification(msg)
-              #EXIT = True
               time.sleep(COOLDOWN_TIME)
             else:
               time.sleep(RETRY_TIME)

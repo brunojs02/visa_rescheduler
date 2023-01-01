@@ -1,0 +1,24 @@
+version: "3.7"
+
+services:
+  chrome:
+    container_name: chrome
+    image: selenium/standalone-chrome:latest
+    hostname: chrome
+    privileged: true
+    shm_size: 2g
+    environment:
+      - SE_NODE_SESSION_TIMEOUT=4000
+    network_mode: "host"
+  usvisa:
+    build: .
+    container_name: usvisa
+    depends_on:
+      - chrome
+    command:
+      - /bin/sh
+      - -c
+      - |
+        ./wait-for-chrome.sh
+        python -u visa.py
+    network_mode: "host"
