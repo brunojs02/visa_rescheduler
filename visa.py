@@ -41,7 +41,11 @@ REGEX_CONTINUE = "//a[contains(text(),'Continuar')]"
 
 
 # def MY_CONDITION(month, day): return int(month) == 11 and int(day) >= 5
-def MY_CONDITION(month, day): return True # No custom condition wanted for the new scheduled date
+def MY_CONDITION(year, month, day):
+    delta = datetime(year, month, day) - datetime.now()
+    is_valid_date = delta.days >= 14 # only accept new dates at least 2 weeks from now
+    print(f"difference in days between dates: {delta.days} days")
+    return is_valid_date
 
 STEP_TIME = 0.5  # time between steps (interactions with forms): 0.5 seconds
 RETRY_TIME = 60*10  # wait time between retries/checks for available dates: 10 minutes
@@ -260,8 +264,8 @@ def get_available_date(dates):
         date = d.get('date')
         # also consider 1 week after from now
         if is_earlier(date) and date != last_seen:
-            _, month, day = date.split('-')
-            if(MY_CONDITION(month, day)):
+            year, month, day = date.split('-')
+            if(MY_CONDITION(int(year), int(month), int(day))):
                 last_seen = date
                 return date
 
