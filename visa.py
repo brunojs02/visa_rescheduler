@@ -41,8 +41,8 @@ REGEX_CONTINUE = "//a[contains(text(),'Continuar')]"
 
 
 # def MY_CONDITION(month, day): return int(month) == 11 and int(day) >= 5
-def MY_CONDITION(year, month, day):
-    delta = datetime(year, month, day) - datetime.now()
+def MY_CONDITION(date):
+    delta = to_datetime(date) - datetime.now()
     is_valid_date = delta.days >= 14 # only accept new dates at least 2 weeks from now
     print(f"difference in days between dates: {delta.days} days")
     return is_valid_date
@@ -158,6 +158,9 @@ def get_date():
         date = json.loads(content)
         return date
 
+def to_datetime(date_str):
+    year, month, day = date_str.split('-')
+    return datetime(int(year), int(month), int(day))
 
 def get_time(date):
     time_url = TIME_URL % date
@@ -173,9 +176,13 @@ def get_casv_date(date, time):
     driver.get(casv_date_url)
     content = driver.find_element(By.TAG_NAME, 'pre').text
     dates = json.loads(content)
-    position = -2 if dates[-1] == date else -1
-
-    return dates[position].get("date")
+    push_notification(dates, 'asc dates: ')
+    schedule_date = to_datetime(date)
+    for d in dates:
+        asc_date = d.get('date')
+        diff = schedule_date - to_datetime(asc_date)
+        if diff.days > 0:
+            return asc_date
 
 def get_casv_time(date, time, casvDate):
     casv_time_url = CASV_TIME_URL + f"&date={casvDate}&consulate_date={date}&consulate_time={time}&appointments[expedite]=false"
@@ -262,16 +269,13 @@ def get_available_date(dates):
     print("Checking for an earlier date:")
     for d in dates:
         date = d.get('date')
-        # also consider 1 week after from now
         if is_earlier(date) and date != last_seen:
-            year, month, day = date.split('-')
-            if(MY_CONDITION(int(year), int(month), int(day))):
+            if(MY_CONDITION(date)):
                 last_seen = date
                 return date
 
 
-def push_notification(dates):
-    msg = "date: "
+def push_notification(dates, msg = 'dates: '):
     for d in dates:
         msg = msg + d.get('date') + '; '
     send_notification(msg)
