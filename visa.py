@@ -176,6 +176,7 @@ def get_casv_date(date, time):
     driver.get(casv_date_url)
     content = driver.find_element(By.TAG_NAME, 'pre').text
     dates = json.loads(content)
+    dates.reverse()
     push_notification(dates, 'asc dates: ')
     schedule_date = to_datetime(date)
     for d in dates:
