@@ -31,6 +31,7 @@ CASV_FACILITY_ID = config['USVISA']['CASV_FACILITY_ID']
 HAS_CASV = config['USVISA'].getboolean('HAS_CASV')
 
 SENDGRID_API_KEY = config['SENDGRID']['SENDGRID_API_KEY']
+SENDGRID_RECEIVER = config['SENDGRID']['SENDGRID_RECEIVER']
 PUSH_TOKEN = config['PUSHOVER']['PUSH_TOKEN']
 PUSH_USER = config['PUSHOVER']['PUSH_USER']
 
@@ -66,7 +67,7 @@ def send_notification(msg):
     if SENDGRID_API_KEY:
         message = Mail(
             from_email=USERNAME,
-            to_emails=USERNAME,
+            to_emails=SENDGRID_RECEIVER,
             subject=msg,
             html_content=msg)
         try:
@@ -177,7 +178,7 @@ def get_casv_date(date, time):
     content = driver.find_element(By.TAG_NAME, 'pre').text
     dates = json.loads(content)
     dates.reverse()
-    push_notification(dates, 'asc dates: ')
+    # push_notification(dates, 'asc dates: ')
     schedule_date = to_datetime(date)
     for d in dates:
         asc_date = d.get('date')
@@ -236,7 +237,7 @@ def reschedule(date):
         EXIT = True
     else:
         print(r.text)
-        msg = f"Reschedule Failed. {date} {time}"
+        msg = f"Reschedule Failed. data={date} time={time} asc_date={data['appointments[asc_appointment][date]']} asc_time={data['appointments[asc_appointment][time]']}"
         send_notification(msg)
 
 
@@ -302,7 +303,7 @@ if __name__ == "__main__":
             print(f"New date: {date}")
             if date:
                 reschedule(date)
-                push_notification(dates)
+                # push_notification(dates)
                 time.sleep(RETRY_TIME)
 
             if(EXIT):
@@ -310,8 +311,8 @@ if __name__ == "__main__":
                 break
 
             if not dates:
-              msg = "usvisa-info banned request for your user"
-              send_notification(msg)
+            #   msg = "usvisa-info banned request for your user"
+            #   send_notification(msg)
               time.sleep(COOLDOWN_TIME)
             else:
               time.sleep(RETRY_TIME)
