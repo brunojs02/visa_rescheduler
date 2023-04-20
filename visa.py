@@ -149,16 +149,24 @@ def do_login_action():
         EC.presence_of_element_located((By.XPATH, REGEX_CONTINUE)))
     print("\tlogin successful!")
 
+def get_data_json(url):
+    session = driver.get_cookie("_yatri_session")["value"]
+    content = driver.execute_script(
+        "var req = new XMLHttpRequest();req.open('GET', '"
+        + str(url)
+        + "', false);req.setRequestHeader('Accept', 'application/json, text/javascript, */*; q=0.01');req.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); req.setRequestHeader('Cookie', '_yatri_session="
+        + session
+        + "'); req.send(null);return req.responseText;"
+    )
+    return json.loads(content)
 
 def get_date():
-    driver.get(DATE_URL)
+    driver.get(APPOINTMENT_URL)
     if not is_logged_in():
         login()
         return get_date()
     else:
-        content = driver.find_element(By.TAG_NAME, 'pre').text
-        date = json.loads(content)
-        return date
+        return get_data_json(DATE_URL)
 
 def to_datetime(date_str):
     year, month, day = date_str.split('-')
@@ -166,18 +174,14 @@ def to_datetime(date_str):
 
 def get_time(date):
     time_url = TIME_URL % date
-    driver.get(time_url)
-    content = driver.find_element(By.TAG_NAME, 'pre').text
-    data = json.loads(content)
+    data = get_data_json(time_url)
     time = data.get("available_times")[-1]
     print(f"Got time successfully! {date} {time}")
     return time
 
 def get_casv_date(date, time):
     casv_date_url = CASV_DATE_URL + f"&consulate_date={date}&consulate_time={time}&appointments[expedite]=false"
-    driver.get(casv_date_url)
-    content = driver.find_element(By.TAG_NAME, 'pre').text
-    dates = json.loads(content)
+    dates = get_data_json(casv_date_url)
     dates.reverse()
     # push_notification(dates, 'asc dates: ')
     schedule_date = to_datetime(date)
@@ -189,14 +193,10 @@ def get_casv_date(date, time):
 
 def get_casv_time(date, time, casvDate):
     casv_time_url = CASV_TIME_URL + f"&date={casvDate}&consulate_date={date}&consulate_time={time}&appointments[expedite]=false"
-    driver.get(casv_time_url)
-    content = driver.find_element(By.TAG_NAME, 'pre').text
-    data = json.loads(content)
+    data = get_data_json(casv_time_url)
     time = data.get("available_times")[-1]
 
     return time
-
-
 
 def reschedule(date):
     global EXIT
